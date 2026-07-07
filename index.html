@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>nook</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #E7E1CE; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useRef } = React;
+
+/* ---------- inline icon set (replaces lucide-react so this file has zero build step) ---------- */
+function Icon({ children, size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+const Home = ({ size, color }) => (
+  <Icon size={size} color={color}><path d="M3 9l9-7 9 7" /><path d="M9 22V12h6v10" /></Icon>
+);
+const CalendarIcon = ({ size, color }) => (
+  <Icon size={size} color={color}><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></Icon>
+);
+const Users = ({ size, color }) => (
+  <Icon size={size} color={color}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Icon>
+);
+const Plus = ({ size, color }) => (
+  <Icon size={size} color={color}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Icon>
+);
+const X = ({ size, color }) => (
+  <Icon size={size} color={color}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Icon>
+);
+const Shuffle = ({ size, color }) => (
+  <Icon size={size} color={color}><polyline points="16 3 21 3 21 8" /><line x1="4" y1="20" x2="21" y2="3" /><polyline points="21 16 21 21 16 21" /><line x1="15" y1="15" x2="21" y2="21" /><line x1="4" y1="4" x2="9" y2="9" /></Icon>
+);
+const Pin = ({ size, color }) => (
+  <Icon size={size} color={color}><path d="M12 17v5" /><path d="M9 10h6l-1 5h-4z" /><path d="M9 3h6v7H9z" /></Icon>
+);
+const MapPin = ({ size, color }) => (
+  <Icon size={size} color={color}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></Icon>
+);
+const Camera = ({ size, color }) => (
+  <Icon size={size} color={color}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></Icon>
+);
+const Check = ({ size, color }) => (
+  <Icon size={size} color={color}><polyline points="20 6 9 17 4 12" /></Icon>
+);
+const UserPlus = ({ size, color }) => (
+  <Icon size={size} color={color}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="17" y1="11" x2="23" y2="11" /></Icon>
+);
+const Copy = ({ size, color }) => (
+  <Icon size={size} color={color}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></Icon>
+);
+const ArrowLeft = ({ size, color }) => (
+  <Icon size={size} color={color}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></Icon>
+);
+const ArrowRight = ({ size, color }) => (
+  <Icon size={size} color={color}><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></Icon>
+);
+
+
+/* ---------- design tokens ---------- */
+const C = {
+  board: "#E7E1CE",
+  paper: "#FFFDF6",
+  ink: "#2B2620",
+  inkSoft: "#6B6355",
+  coral: "#E85C41",
+  mustard: "#E3A72E",
+  sage: "#6FA98A",
+  periwinkle: "#6E7FDB",
+  line: "#D9D2BC",
+};
+
+const FONTS = `
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+`;
+
+const display = { fontFamily: "'Caveat', cursive" };
+const body = { fontFamily: "'Work Sans', sans-serif" };
+const mono = { fontFamily: "'IBM Plex Mono', monospace" };
+
+/* ---------- mock data ---------- */
+const AVATAR_COLORS = [C.coral, C.mustard, C.sage, C.periwinkle];
+
+const makeMember = (name, i) => ({
+  name,
+  initials: name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase(),
+  color: AVATAR_COLORS[i % AVATAR_COLORS.length],
+});
+
+const ALL_NAMES = [
+  "Jess Kim","Marco Diaz","Priya Rao","Tom Fields","Ana Silva","Ben Ho",
+  "Lena Wolf","Sam Osei","Ruth Lin","Dev Patel","Cole Bright","Mia Torres",
+  "Nate Grey","Ivy Chen","Owen Bass","Kira Voss","Leo Marsh","Zoe Park",
+  "Gus Reed","Nora Vane",
+];
+const MEMBERS = ALL_NAMES.map(makeMember);
+
+const GROUPS = [
+  { id: "all", name: "Everyone", members: MEMBERS },
+  { id: "roommates", name: "Roommates", members: MEMBERS.slice(0, 5) },
+  { id: "gym", name: "Gym crew", members: MEMBERS.slice(5, 11) },
+  { id: "boardgame", name: "Board game night", members: MEMBERS.slice(11, 18) },
+];
+
+const DEFAULT_PROMPTS = [
+  "Post something. Anything. We're not your boss.",
+  "Prove you left the house today",
+  "Whatever's on your desk is now public record",
+  "A photo of something you'll regret posting in 3 years",
+  "Describe today in the fewest words possible",
+  "This is not mandatory. We just needed a prompt.",
+  "Show the last thing you touched before opening this app",
+  "One (1) sentence about your day. No elaboration.",
+  "Post proof that you are, in fact, still alive",
+  "Nobody asked, but here's your chance anyway",
+];
+
+const REACTIONS = ["😂", "👀", "🔥", "💀"];
+
+const YOU = { name: "You", initials: "Y", color: C.periwinkle };
+
+const seedPosts = (members) =>
+  members.slice(0, 5).map((m, i) => ({
+    id: `${m.name}-${i}`,
+    member: m,
+    time: `${9 + i}:4${i}am`,
+    type: i % 3 === 0 ? "photo" : "text",
+    content:
+      i % 3 === 0
+        ? ["messy desk, no regrets", "the snack drawer, exposed", "current view", "proof of life"][i % 4]
+        : [
+            "surviving on iced coffee and vibes today",
+            "one word: swamp",
+            "found a spider in my shoe. that's the post",
+            "today's outfit is 'gave up at noon'",
+          ][i % 4],
+    rotation: [-2, 1, -1, 2, -1.5][i % 5],
+    reactions: { "😂": Math.max(0, 3 - i), "🔥": i % 2 },
+    promptTag: i % 2 === 0 ? DEFAULT_PROMPTS[i % DEFAULT_PROMPTS.length] : null,
+  }));
+
+const EVENTS = [
+  { date: 4, title: "Movie night", group: "roommates" },
+  { date: 9, title: "Leg day", group: "gym" },
+  { date: 14, title: "Catan rematch", group: "boardgame" },
+  { date: 22, title: "Rooftop hang", group: "all" },
+  { date: 27, title: "Trivia night", group: "all" },
+];
+
+const groupColor = (id) => {
+  const c = { all: C.periwinkle, roommates: C.coral, gym: C.sage, boardgame: C.mustard };
+  return c[id] || C.ink;
+};
+
+/* ---------- small components ---------- */
+function Avatar({ member, size = 28 }) {
+  return (
+    <div
+      style={{
+        width: size, height: size, borderRadius: "50%",
+        background: member.color, color: C.paper,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: size * 0.38, fontWeight: 600, ...body,
+        border: `2px solid ${C.paper}`, flexShrink: 0,
+      }}
+    >
+      {member.initials}
+    </div>
+  );
+}
+
+function Pushpin({ color }) {
+  return (
+    <div style={{ position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)" }}>
+      <div style={{ width: 12, height: 12, borderRadius: "50%", background: color, boxShadow: "0 2px 3px rgba(0,0,0,0.25)" }} />
+    </div>
+  );
+}
+
+function StickerAdd({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState(null);
+  const [label, setLabel] = useState("");
+  const inputRef = useRef(null);
+
+  const handleFile = (e) => {
+    const f = e.target.files?.[0];
+    if (f) setFile(URL.createObjectURL(f));
+  };
+
+  const submit = () => {
+    if (!file) return;
+    onAdd({ id: `s${Date.now()}`, url: file, label: label.trim() || "sticker" });
+    setFile(null);
+    setLabel("");
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          border: `1px dashed ${C.inkSoft}`, background: "transparent", borderRadius: 20,
+          width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+        }}
+        aria-label="upload a custom sticker"
+        title="upload a custom sticker"
+      >
+        <Plus size={13} color={C.inkSoft} />
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", gap: 5, border: `1px solid ${C.line}`,
+        borderRadius: 20, padding: "3px 6px", background: C.paper,
+      }}
+    >
+      <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+      {!file ? (
+        <button
+          onClick={() => inputRef.current?.click()}
+          style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11, ...body, color: C.inkSoft, padding: "2px 4px" }}
+        >
+          choose image
+        </button>
+      ) : (
+        <>
+          <img src={file} alt="new sticker" style={{ width: 20, height: 20, borderRadius: 4, objectFit: "cover" }} />
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="label"
+            maxLength={14}
+            style={{ width: 56, fontSize: 11, ...body, border: "none", outline: "none", background: "transparent" }}
+          />
+          <button onClick={submit} style={{ border: "none", background: "none", cursor: "pointer", padding: 2 }} aria-label="save sticker">
+            <Check size={13} color={C.sage} />
+          </button>
+        </>
+      )}
+      <button
+        onClick={() => { setOpen(false); setFile(null); setLabel(""); }}
+        style={{ border: "none", background: "none", cursor: "pointer", padding: 2 }}
+        aria-label="cancel"
+      >
+        <X size={13} color={C.inkSoft} />
+      </button>
+    </div>
+  );
+}
+
+function PostCard({ post, stickers, onAddSticker }) {
+  const [reacted, setReacted] = useState({});
+  const [reactedStickers, setReactedStickers] = useState({});
+  const toggle = (emoji) => setReacted((r) => ({ ...r, [emoji]: !r[emoji] }));
+  const toggleSticker = (id) => setReactedStickers((r) => ({ ...r, [id]: !r[id] }));
+  return (
+    <div
+      style={{
+        position: "relative", background: C.paper, borderRadius: 4,
+        padding: "18px 16px 14px", margin: "22px 10px",
+        transform: `rotate(${post.rotation}deg)`,
+        boxShadow: "0 3px 8px rgba(43,38,32,0.15)",
+      }}
+    >
+      <Pushpin color={post.member.color} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <Avatar member={post.member} />
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, ...body, color: C.ink }}>{post.member.name}</div>
+          <div style={{ fontSize: 11, ...mono, color: C.inkSoft }}>{post.time}</div>
+        </div>
+      </div>
+
+      {post.promptTag && (
+        <div
+          style={{
+            display: "inline-block", fontSize: 11, ...body, fontStyle: "italic", color: C.inkSoft,
+            background: `${C.mustard}26`, border: `1px solid ${C.mustard}88`, borderRadius: 20,
+            padding: "2px 9px", marginBottom: 10,
+          }}
+        >
+          answering: {post.promptTag}
+        </div>
+      )}
+
+      {post.type === "photo" ? (
+        <div
+          style={{
+            background: `${post.member.color}22`, border: `1px dashed ${post.member.color}`,
+            borderRadius: 4, padding: "26px 10px", textAlign: "center", marginBottom: 10,
+          }}
+        >
+          <Camera size={18} color={post.member.color} style={{ marginBottom: 6 }} />
+          <div style={{ fontSize: 13, ...body, color: C.inkSoft, fontStyle: "italic" }}>{post.content}</div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 15, ...body, color: C.ink, lineHeight: 1.5, marginBottom: 10 }}>{post.content}</div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        {REACTIONS.map((e) => {
+          const base = post.reactions[e] || 0;
+          const count = base + (reacted[e] ? 1 : 0);
+          return (
+            <button
+              key={e}
+              onClick={() => toggle(e)}
+              style={{
+                border: `1px solid ${reacted[e] ? post.member.color : C.line}`,
+                background: reacted[e] ? `${post.member.color}22` : "transparent",
+                borderRadius: 20, padding: "3px 9px", fontSize: 13, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 4, ...body,
+              }}
+            >
+              <span>{e}</span>
+              {count > 0 && <span style={{ fontSize: 11, color: C.inkSoft }}>{count}</span>}
+            </button>
+          );
+        })}
+
+        {stickers.map((s) => {
+          const active = reactedStickers[s.id];
+          return (
+            <button
+              key={s.id}
+              onClick={() => toggleSticker(s.id)}
+              title={s.label}
+              style={{
+                border: `1px solid ${active ? C.periwinkle : C.line}`,
+                background: active ? `${C.periwinkle}22` : "transparent",
+                borderRadius: 20, padding: "3px 7px", cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 4,
+              }}
+            >
+              <img src={s.url} alt={s.label} style={{ width: 16, height: 16, borderRadius: 3, objectFit: "cover" }} />
+            </button>
+          );
+        })}
+
+        <StickerAdd onAdd={onAddSticker} />
+      </div>
+    </div>
+  );
+}
+
+function CaughtUp() {
+  return (
+    <div style={{ textAlign: "center", padding: "30px 30px 40px" }}>
+      <div
+        style={{
+          borderTop: `2px dashed ${C.inkSoft}66`, position: "relative", marginBottom: 18,
+        }}
+      />
+      <div style={{ fontSize: 26, ...display, color: C.inkSoft }}>that's everything</div>
+      <div style={{ fontSize: 13, ...body, color: C.inkSoft, marginTop: 4 }}>
+        the board does not refresh itself. neither should you.
+      </div>
+    </div>
+  );
+}
+
+function AddPromptChip({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+
+  const submit = () => {
+    if (!text.trim()) return;
+    onAdd(text.trim());
+    setText("");
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          border: `1px dashed ${C.inkSoft}`, background: "transparent", borderRadius: 4,
+          padding: "6px 10px", fontSize: 11, ...body, color: C.inkSoft, cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 4,
+        }}
+      >
+        <Plus size={11} /> add your own
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", gap: 4, border: `1px solid ${C.line}`,
+        borderRadius: 20, padding: "3px 6px", background: C.paper,
+      }}
+    >
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="type a prompt..."
+        maxLength={80}
+        autoFocus
+        style={{ width: 130, fontSize: 11, ...body, border: "none", outline: "none", background: "transparent" }}
+      />
+      <button onClick={submit} style={{ border: "none", background: "none", cursor: "pointer", padding: 2 }} aria-label="save prompt">
+        <Check size={12} color={C.sage} />
+      </button>
+      <button
+        onClick={() => { setOpen(false); setText(""); }}
+        style={{ border: "none", background: "none", cursor: "pointer", padding: 2 }}
+        aria-label="cancel"
+      >
+        <X size={12} color={C.inkSoft} />
+      </button>
+    </div>
+  );
+}
+
+const CHIP_COLORS = [C.coral, C.mustard, C.sage, C.periwinkle];
+
+function Composer({ group, prompts, prompt, onShuffle, onClose, onSubmit, onAddPrompt }) {
+  const [text, setText] = useState("");
+  const [posted, setPosted] = useState(false);
+  const [photo, setPhoto] = useState(null);
+  const [mode, setMode] = useState("random"); // 'random' | 'pick' | 'skip'
+  const [pickedPrompt, setPickedPrompt] = useState(null);
+  const fileInputRef = React.useRef(null);
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (file) setPhoto(URL.createObjectURL(file));
+  };
+
+  const effectivePrompt = mode === "skip" ? null : mode === "pick" ? pickedPrompt : prompt;
+  const canPost = text.trim().length > 0 || photo;
+
+  const submit = () => {
+    if (!canPost) return;
+    onSubmit({
+      id: `you-${Date.now()}`,
+      member: YOU,
+      time: "just now",
+      type: photo ? "photo" : "text",
+      content: photo ? (text.trim() || "a photo, no caption") : text.trim(),
+      rotation: [-2, 1.5, -1, 2][Math.floor(Math.random() * 4)],
+      reactions: {},
+      promptTag: effectivePrompt,
+    });
+    setPosted(true);
+  };
+
+  return (
+    <div
+      style={{
+        position: "absolute", inset: 0, background: "rgba(43,38,32,0.45)",
+        display: "flex", alignItems: "flex-end", zIndex: 20,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: C.board, width: "100%", borderRadius: "20px 20px 0 0", padding: 20 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 22, ...display, color: C.ink }}>pin something to {group.name}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}>
+            <X size={20} color={C.inkSoft} />
+          </button>
+        </div>
+
+        {!posted ? (
+          <>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <button
+                onClick={() => setMode("random")}
+                style={{
+                  flex: 1, border: `1px solid ${mode === "random" ? C.coral : C.line}`,
+                  background: mode === "random" ? `${C.coral}1a` : C.paper, color: mode === "random" ? C.coral : C.inkSoft,
+                  borderRadius: 20, padding: "6px 0", fontSize: 12, ...body, cursor: "pointer", display: "flex",
+                  alignItems: "center", justifyContent: "center", gap: 4,
+                }}
+              >
+                <Shuffle size={12} /> random
+              </button>
+              <button
+                onClick={() => setMode("pick")}
+                style={{
+                  flex: 1, border: `1px solid ${mode === "pick" ? C.coral : C.line}`,
+                  background: mode === "pick" ? `${C.coral}1a` : C.paper, color: mode === "pick" ? C.coral : C.inkSoft,
+                  borderRadius: 20, padding: "6px 0", fontSize: 12, ...body, cursor: "pointer",
+                }}
+              >
+                choose one
+              </button>
+              <button
+                onClick={() => setMode("skip")}
+                style={{
+                  flex: 1, border: `1px solid ${mode === "skip" ? C.coral : C.line}`,
+                  background: mode === "skip" ? `${C.coral}1a` : C.paper, color: mode === "skip" ? C.coral : C.inkSoft,
+                  borderRadius: 20, padding: "6px 0", fontSize: 12, ...body, cursor: "pointer",
+                }}
+              >
+                skip
+              </button>
+            </div>
+
+            {mode === "pick" && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10 }}>
+                {prompts.map((p, i) => {
+                  const color = CHIP_COLORS[i % CHIP_COLORS.length];
+                  const active = pickedPrompt === p;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setPickedPrompt(p)}
+                      title={p}
+                      style={{
+                        maxWidth: 150, textAlign: "left", border: `1px solid ${active ? color : C.line}`,
+                        background: active ? `${color}2e` : C.paper, color: C.ink,
+                        borderRadius: 4, padding: "6px 9px", fontSize: 11, ...body, cursor: "pointer",
+                        transform: `rotate(${(i % 5) - 2}deg)`, boxShadow: "0 1px 3px rgba(43,38,32,0.12)",
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      }}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+                <AddPromptChip onAdd={(p) => { onAddPrompt(p); setPickedPrompt(p); }} />
+              </div>
+            )}
+
+            {mode !== "skip" ? (
+              effectivePrompt ? (
+                <div
+                  style={{
+                    background: `${C.mustard}33`, border: `1px dashed ${C.mustard}`, borderRadius: 4,
+                    padding: "8px 12px", fontSize: 13, ...body, color: C.ink, marginBottom: 12,
+                    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+                  }}
+                >
+                  <span><i>{effectivePrompt}</i></span>
+                  {mode === "random" && (
+                    <button onClick={onShuffle} style={{ border: "none", background: "none", cursor: "pointer", flexShrink: 0 }} aria-label="shuffle prompt">
+                      <Shuffle size={14} color={C.inkSoft} />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 12, fontStyle: "italic" }}>
+                  pick a sticky note above, or add your own.
+                </div>
+              )
+            ) : (
+              <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 12, fontStyle: "italic" }}>
+                posting with no prompt attached.
+              </div>
+            )}
+
+            {photo && (
+              <div style={{ position: "relative", marginBottom: 10 }}>
+                <img src={photo} alt="attached" style={{ width: "100%", maxHeight: 180, objectFit: "cover", borderRadius: 4, display: "block" }} />
+                <button
+                  onClick={() => setPhoto(null)}
+                  style={{
+                    position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: "50%",
+                    background: "rgba(43,38,32,0.65)", border: "none", display: "flex", alignItems: "center",
+                    justifyContent: "center", cursor: "pointer",
+                  }}
+                  aria-label="remove photo"
+                >
+                  <X size={13} color={C.paper} />
+                </button>
+              </div>
+            )}
+
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="say something. or don't."
+              style={{
+                width: "100%", minHeight: 80, borderRadius: 4, border: `1px solid ${C.line}`,
+                padding: 10, fontSize: 14, ...body, resize: "none", boxSizing: "border-box", background: C.paper,
+              }}
+            />
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  border: `1px solid ${C.line}`, borderRadius: 20, padding: "9px 0", background: C.paper,
+                  fontSize: 13, cursor: "pointer", ...body, color: C.inkSoft,
+                }}
+              >
+                <Camera size={15} /> {photo ? "replace photo" : "upload photo"}
+              </button>
+              <button
+                onClick={submit}
+                style={{
+                  flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  border: "none", borderRadius: 20, padding: "9px 0",
+                  background: canPost ? C.coral : C.line, color: C.paper,
+                  fontSize: 13, cursor: canPost ? "pointer" : "default", ...body, fontWeight: 600,
+                }}
+              >
+                <Pin size={15} /> pin it
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <Check size={26} color={C.sage} />
+            <div style={{ fontSize: 20, ...display, color: C.ink, marginTop: 6 }}>pinned. congratulations.</div>
+            <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginTop: 4 }}>
+              {effectivePrompt ? <>tagged as answering: <i>{effectivePrompt}</i></> : "posted with no prompt tag."}
+            </div>
+            <button
+              onClick={onClose}
+              style={{ marginTop: 12, border: "none", background: "none", color: C.periwinkle, fontSize: 13, cursor: "pointer", ...body }}
+            >
+              close
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BoardScreen({ posts, prompt, onShuffle, feedLimit, stickers, onAddSticker }) {
+  const shown = posts.slice(0, feedLimit);
+  return (
+    <div style={{ paddingBottom: 20 }}>
+      <div
+        style={{
+          margin: "14px 14px 4px", background: `${C.mustard}30`, border: `1px dashed ${C.mustard}`,
+          borderRadius: 4, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}
+      >
+        <div style={{ fontSize: 15, ...body, color: C.ink }}>
+          <span style={{ color: C.inkSoft, fontSize: 12 }}>today's prompt · </span>
+          <br />
+          {prompt}
+        </div>
+        <button onClick={onShuffle} style={{ border: "none", background: "none", cursor: "pointer", padding: 6 }} aria-label="shuffle prompt">
+          <Shuffle size={16} color={C.inkSoft} />
+        </button>
+      </div>
+
+      {shown.map((p) => (
+        <PostCard key={p.id} post={p} stickers={stickers} onAddSticker={onAddSticker} />
+      ))}
+      <CaughtUp />
+    </div>
+  );
+}
+
+function CalendarScreen({ group }) {
+  const days = Array.from({ length: 31 }, (_, i) => i + 1);
+  const firstWeekday = 3; // July 1 2026 is a Wednesday
+  const cells = [...Array(firstWeekday).fill(null), ...days];
+  const [selected, setSelected] = useState(null);
+
+  return (
+    <div style={{ padding: "16px 14px 30px" }}>
+      <div style={{ fontSize: 24, ...display, color: C.ink, marginBottom: 10 }}>july, {group.name.toLowerCase()}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 4 }}>
+        {["s", "m", "t", "w", "t", "f", "s"].map((d, i) => (
+          <div key={i} style={{ textAlign: "center", fontSize: 11, ...mono, color: C.inkSoft }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+        {cells.map((day, i) => {
+          const evs = day ? EVENTS.filter((e) => e.date === day && (e.group === group.id || group.id === "all" || e.group === "all")) : [];
+          return (
+            <div
+              key={i}
+              onClick={() => day && setSelected(day)}
+              style={{
+                aspectRatio: "1", borderRadius: 4, background: day ? C.paper : "transparent",
+                border: day ? `1px solid ${C.line}` : "none", display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", cursor: day ? "pointer" : "default", position: "relative",
+                fontSize: 12, ...body, color: C.ink,
+              }}
+            >
+              {day}
+              {evs.length > 0 && (
+                <div style={{ position: "absolute", bottom: 4, display: "flex", gap: 2 }}>
+                  {evs.map((e, idx) => (
+                    <div key={idx} style={{ width: 5, height: 5, borderRadius: "50%", background: groupColor(e.group) }} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ marginTop: 20 }}>
+        <div style={{ fontSize: 13, ...body, color: C.inkSoft, marginBottom: 8 }}>pinned to the calendar</div>
+        {EVENTS.filter((e) => e.group === group.id || group.id === "all" || e.group === "all").map((e, i) => (
+          <div
+            key={i}
+            style={{
+              display: "flex", alignItems: "center", gap: 10, background: C.paper, border: `1px solid ${C.line}`,
+              borderRadius: 4, padding: "8px 10px", marginBottom: 6,
+            }}
+          >
+            <div style={{ width: 30, textAlign: "center", ...mono, fontSize: 13, color: groupColor(e.group), fontWeight: 500 }}>
+              {e.date}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, ...body, color: C.ink }}>{e.title}</div>
+              <div style={{ fontSize: 11, ...mono, color: C.inkSoft }}>
+                {GROUPS.find((g) => g.id === e.group)?.name || "everyone"}
+              </div>
+            </div>
+            <MapPin size={13} color={C.inkSoft} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InviteModal({ onClose, onPreviewJoin }) {
+  const [code] = useState(() => Math.random().toString(36).slice(2, 8));
+  const [copied, setCopied] = useState(false);
+  const link = `nook.app/join/${code}`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "absolute", inset: 0, background: "rgba(43,38,32,0.45)",
+        display: "flex", alignItems: "flex-end", zIndex: 20,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: C.board, width: "100%", borderRadius: "20px 20px 0 0", padding: 20 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 22, ...display, color: C.ink }}>invite a friend</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}>
+            <X size={20} color={C.inkSoft} />
+          </button>
+        </div>
+
+        <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 12 }}>
+          one-time link, expires in 7 days. no phone verification — whoever taps it is in, so only send it to people you'd actually trust with the board.
+        </div>
+
+        <div
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+            background: C.paper, border: `1px dashed ${C.periwinkle}`, borderRadius: 4, padding: "10px 12px", marginBottom: 14,
+          }}
+        >
+          <span style={{ fontSize: 13, ...mono, color: C.ink }}>{link}</span>
+          <button
+            onClick={copy}
+            style={{ border: "none", background: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}
+            aria-label="copy invite link"
+          >
+            {copied ? <Check size={15} color={C.sage} /> : <Copy size={15} color={C.periwinkle} />}
+            <span style={{ fontSize: 11, ...body, color: copied ? C.sage : C.periwinkle }}>{copied ? "copied" : "copy"}</span>
+          </button>
+        </div>
+
+        <button
+          onClick={onPreviewJoin}
+          style={{
+            width: "100%", border: `1px solid ${C.line}`, background: C.paper, borderRadius: 20,
+            padding: "10px 0", fontSize: 13, ...body, color: C.inkSoft, cursor: "pointer",
+          }}
+        >
+          preview what they'll see
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function JoinFlow({ onComplete, onCancel }) {
+  const [step, setStep] = useState(0);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(AVATAR_COLORS[0]);
+  const steps = ["welcome", "name", "color", "done"];
+
+  const next = () => setStep((s) => Math.min(s + 1, steps.length - 1));
+  const back = () => (step === 0 ? onCancel() : setStep((s) => s - 1));
+
+  const canContinue =
+    step === 0 ? true :
+    step === 1 ? name.trim().length > 0 :
+    true;
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: C.board, display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 0" }}>
+        <button onClick={back} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }} aria-label="back">
+          <ArrowLeft size={18} color={C.inkSoft} />
+        </button>
+        <div style={{ display: "flex", gap: 5 }}>
+          {steps.map((_, i) => (
+            <div
+              key={i}
+              style={{
+                width: 6, height: 6, borderRadius: "50%",
+                background: i <= step ? C.coral : C.line,
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ width: 18 }} />
+      </div>
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 28px" }}>
+        {step === 0 && (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 34, ...display, color: C.ink, marginBottom: 8 }}>you've been invited to nook</div>
+            <div style={{ fontSize: 14, ...body, color: C.inkSoft }}>
+              jess kim sent you this link directly. that's the whole verification system.
+            </div>
+          </div>
+        )}
+
+        {step === 1 && (
+          <div>
+            <div style={{ fontSize: 26, ...display, color: C.ink, marginBottom: 4 }}>what's your name</div>
+            <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 14 }}>this is what your friends will see on your posts.</div>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Sam Osei"
+              autoFocus
+              style={{
+                width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 4,
+                padding: "10px 12px", fontSize: 15, ...body, background: C.paper,
+              }}
+            />
+          </div>
+        )}
+
+        {step === 2 && (
+          <div>
+            <div style={{ fontSize: 26, ...display, color: C.ink, marginBottom: 4 }}>pick your color</div>
+            <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 14 }}>this is how you'll show up on the board.</div>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 10 }}>
+              {AVATAR_COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setColor(c)}
+                  style={{
+                    width: 44, height: 44, borderRadius: "50%", background: c, cursor: "pointer",
+                    border: color === c ? `3px solid ${C.ink}` : `3px solid transparent`,
+                  }}
+                  aria-label={`choose color ${c}`}
+                />
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Avatar member={{ name: name || "You", initials: (name || "You").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase(), color }} size={44} />
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+              <Avatar member={{ name: name || "You", initials: (name || "You").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase(), color }} size={56} />
+            </div>
+            <div style={{ fontSize: 30, ...display, color: C.ink, marginBottom: 6 }}>welcome, {name || "friend"}</div>
+            <div style={{ fontSize: 13, ...body, color: C.inkSoft }}>you're in. no onboarding tour, just the board.</div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: 20 }}>
+        <button
+          onClick={step === steps.length - 1 ? onComplete : next}
+          disabled={!canContinue}
+          style={{
+            width: "100%", border: "none", borderRadius: 20, padding: "11px 0",
+            background: canContinue ? C.coral : C.line, color: C.paper, fontSize: 14, ...body, fontWeight: 600,
+            cursor: canContinue ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}
+        >
+          {step === steps.length - 1 ? "enter nook" : "continue"}
+          {step !== steps.length - 1 && <ArrowRight size={15} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GroupsScreen({ activeGroup, setActiveGroup, stickers, onInvite }) {
+  return (
+    <div style={{ padding: "16px 14px 30px" }}>
+      <div style={{ fontSize: 24, ...display, color: C.ink, marginBottom: 12 }}>your groups</div>
+      {GROUPS.map((g) => (
+        <div
+          key={g.id}
+          onClick={() => setActiveGroup(g.id)}
+          style={{
+            background: C.paper, border: `1px solid ${activeGroup === g.id ? groupColor(g.id) : C.line}`,
+            borderRadius: 8, padding: "12px 14px", marginBottom: 10, cursor: "pointer",
+            borderLeft: `4px solid ${groupColor(g.id)}`,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 16, ...body, fontWeight: 600, color: C.ink }}>{g.name}</div>
+            <div style={{ fontSize: 11, ...mono, color: C.inkSoft }}>{g.members.length} people</div>
+          </div>
+          <div style={{ display: "flex", marginTop: 8 }}>
+            {g.members.slice(0, 6).map((m, i) => (
+              <div key={i} style={{ marginLeft: i === 0 ? 0 : -8 }}>
+                <Avatar member={m} size={24} />
+              </div>
+            ))}
+            {g.members.length > 6 && (
+              <div style={{ marginLeft: -8, fontSize: 11, ...mono, color: C.inkSoft, display: "flex", alignItems: "center", paddingLeft: 6 }}>
+                +{g.members.length - 6}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={onInvite}
+          style={{
+            flex: 1, border: `1px solid ${C.periwinkle}`, background: `${C.periwinkle}14`, borderRadius: 8,
+            padding: "12px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            fontSize: 14, ...body, color: C.periwinkle, cursor: "pointer",
+          }}
+        >
+          <UserPlus size={16} /> invite a friend
+        </button>
+        <button
+          style={{
+            flex: 1, border: `1px dashed ${C.inkSoft}`, background: "transparent", borderRadius: 8,
+            padding: "12px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            fontSize: 14, ...body, color: C.inkSoft, cursor: "pointer",
+          }}
+        >
+          <Plus size={16} /> new group
+        </button>
+      </div>
+
+      <div style={{ marginTop: 24 }}>
+        <div style={{ fontSize: 18, ...display, color: C.ink, marginBottom: 4 }}>sticker pack</div>
+        <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 10 }}>
+          {stickers.length === 0
+            ? "nobody's uploaded a custom reaction yet. fix that on any post."
+            : "custom reactions people have added. shows up on every post."}
+        </div>
+        {stickers.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {stickers.map((s) => (
+              <div
+                key={s.id}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, background: C.paper,
+                  border: `1px solid ${C.line}`, borderRadius: 20, padding: "4px 10px 4px 4px",
+                }}
+              >
+                <img src={s.url} alt={s.label} style={{ width: 22, height: 22, borderRadius: 4, objectFit: "cover" }} />
+                <span style={{ fontSize: 12, ...body, color: C.ink }}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- app shell ---------- */
+function App() {
+  const [tab, setTab] = useState("board");
+  const [activeGroupId, setActiveGroupId] = useState("all");
+  const [prompts, setPrompts] = useState(DEFAULT_PROMPTS);
+  const [promptIdx, setPromptIdx] = useState(0);
+  const [showComposer, setShowComposer] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [screen, setScreen] = useState("main"); // 'main' | 'join'
+  const [stickers, setStickers] = useState([]);
+  const addSticker = (s) => setStickers((prev) => [...prev, s]);
+  const addPrompt = (text) => setPrompts((prev) => [...prev, text]);
+  const [postsByGroup, setPostsByGroup] = useState(() => {
+    const obj = {};
+    GROUPS.forEach((g) => { obj[g.id] = seedPosts(g.members); });
+    return obj;
+  });
+  const addPost = (groupId, post) =>
+    setPostsByGroup((prev) => ({ ...prev, [groupId]: [post, ...prev[groupId]] }));
+
+  const group = GROUPS.find((g) => g.id === activeGroupId);
+  const prompt = prompts[promptIdx % prompts.length];
+
+  const shuffle = () => setPromptIdx((i) => (i + 1 + Math.floor(Math.random() * Math.max(1, prompts.length - 1))) % prompts.length);
+
+  const navItems = [
+    { id: "board", label: "board", icon: Home },
+    { id: "calendar", label: "calendar", icon: CalendarIcon },
+    { id: "groups", label: "groups", icon: Users },
+  ];
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", padding: "20px 0", background: "transparent" }}>
+      <style>{FONTS}</style>
+      <div
+        style={{
+          width: 400, height: 780, background: C.board, borderRadius: 32, overflow: "hidden",
+          position: "relative", boxShadow: "0 8px 30px rgba(43,38,32,0.25)", border: `6px solid ${C.ink}`,
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        {screen === "join" ? (
+          <JoinFlow onComplete={() => setScreen("main")} onCancel={() => setScreen("main")} />
+        ) : (
+          <>
+        {/* header */}
+        <div style={{ padding: "16px 16px 10px", flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 28, ...display, color: C.ink, fontWeight: 700 }}>nook</div>
+            <button
+              onClick={() => setShowComposer(true)}
+              style={{
+                width: 34, height: 34, borderRadius: "50%", background: C.coral, border: "none",
+                display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+              }}
+              aria-label="new post"
+            >
+              <Plus size={18} color={C.paper} />
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 12, paddingBottom: 4 }}>
+            {GROUPS.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => setActiveGroupId(g.id)}
+                style={{
+                  flexShrink: 0, border: `1px solid ${activeGroupId === g.id ? groupColor(g.id) : C.line}`,
+                  background: activeGroupId === g.id ? `${groupColor(g.id)}22` : C.paper,
+                  color: activeGroupId === g.id ? groupColor(g.id) : C.inkSoft,
+                  borderRadius: 20, padding: "6px 14px", fontSize: 13, ...body, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                }}
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* content */}
+        <div style={{ flex: 1, overflowY: "auto", position: "relative" }}>
+          {tab === "board" && (
+            <BoardScreen posts={postsByGroup[activeGroupId]} prompt={prompt} onShuffle={shuffle} feedLimit={postsByGroup[activeGroupId].length} stickers={stickers} onAddSticker={addSticker} />
+          )}
+          {tab === "calendar" && <CalendarScreen group={group} />}
+          {tab === "groups" && (
+            <GroupsScreen
+              activeGroup={activeGroupId}
+              setActiveGroup={setActiveGroupId}
+              stickers={stickers}
+              onInvite={() => setShowInvite(true)}
+            />
+          )}
+          {showComposer && (
+            <Composer
+              group={group}
+              prompts={prompts}
+              prompt={prompt}
+              onShuffle={shuffle}
+              onClose={() => setShowComposer(false)}
+              onSubmit={(post) => addPost(activeGroupId, post)}
+              onAddPrompt={addPrompt}
+            />
+          )}
+          {showInvite && (
+            <InviteModal
+              onClose={() => setShowInvite(false)}
+              onPreviewJoin={() => { setShowInvite(false); setScreen("join"); }}
+            />
+          )}
+        </div>
+
+        {/* bottom nav */}
+        <div style={{ display: "flex", borderTop: `1px solid ${C.line}`, background: C.paper, flexShrink: 0 }}>
+          {navItems.map((n) => {
+            const Icon = n.icon;
+            const active = tab === n.id;
+            return (
+              <button
+                key={n.id}
+                onClick={() => setTab(n.id)}
+                style={{
+                  flex: 1, border: "none", background: "none", padding: "10px 0 8px", cursor: "pointer",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                }}
+              >
+                <Icon size={20} color={active ? C.coral : C.inkSoft} />
+                <span style={{ fontSize: 11, ...body, color: active ? C.coral : C.inkSoft, fontWeight: active ? 600 : 400 }}>
+                  {n.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
