@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>nook</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
-  html, body { margin: 0; padding: 0; background: #E7E1CE; }
-  #root { min-height: 100vh; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #E7E1CE; overscroll-behavior: none; }
+  #root { height: 100%; }
 </style>
 </head>
 <body>
@@ -102,10 +102,15 @@ async function uploadToMedia(file, prefix) {
   return data.publicUrl;
 }
 
-/* ---------- post card ---------- */
-function PostCard({ post, stickers, onReact, onAddSticker }) {
+/* ---------- post card (reactions now show WHO reacted, not just a count) ---------- */
+function PostCard({ post, stickers, me, profileById, onReact, onAddSticker }) {
   const author = post.profiles || { name: "someone", color: C.inkSoft };
-  const react = (key) => onReact(post.id, key, post.reactions || {});
+  const rows = post.reactionRows || [];
+
+  const summaryFor = (kind) => rows.filter((r) => r.kind === kind);
+  const reactedByMe = (kind) => rows.some((r) => r.kind === kind && r.profile_id === me.id);
+
+  const activeKinds = [...new Set(rows.map((r) => r.kind))];
 
   return (
     <div style={{
@@ -141,11 +146,12 @@ function PostCard({ post, stickers, onReact, onAddSticker }) {
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         {REACTIONS.map((e) => {
-          const count = (post.reactions || {})[e] || 0;
+          const count = summaryFor(e).length;
+          const mine = reactedByMe(e);
           return (
-            <button key={e} onClick={() => react(e)} style={{
-              border: `1px solid ${C.line}`, background: "transparent", borderRadius: 20, padding: "3px 9px",
-              fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, ...body,
+            <button key={e} onClick={() => onReact(post.id, e)} style={{
+              border: `1px solid ${mine ? C.coral : C.line}`, background: mine ? `${C.coral}1a` : "transparent",
+              borderRadius: 20, padding: "3px 9px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, ...body,
             }}>
               <span>{e}</span>
               {count > 0 && <span style={{ fontSize: 11, color: C.inkSoft }}>{count}</span>}
@@ -153,11 +159,12 @@ function PostCard({ post, stickers, onReact, onAddSticker }) {
           );
         })}
         {stickers.map((s) => {
-          const count = (post.reactions || {})[s.id] || 0;
+          const count = summaryFor(s.id).length;
+          const mine = reactedByMe(s.id);
           return (
-            <button key={s.id} onClick={() => react(s.id)} title={s.label} style={{
-              border: `1px solid ${C.line}`, background: "transparent", borderRadius: 20, padding: "3px 7px",
-              cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+            <button key={s.id} onClick={() => onReact(post.id, s.id)} title={s.label} style={{
+              border: `1px solid ${mine ? C.periwinkle : C.line}`, background: mine ? `${C.periwinkle}1a` : "transparent",
+              borderRadius: 20, padding: "3px 7px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
             }}>
               <img src={s.url} alt={s.label} style={{ width: 16, height: 16, borderRadius: 3, objectFit: "cover" }} />
               {count > 0 && <span style={{ fontSize: 11, color: C.inkSoft }}>{count}</span>}
@@ -166,6 +173,22 @@ function PostCard({ post, stickers, onReact, onAddSticker }) {
         })}
         <StickerAdd onAdd={onAddSticker} />
       </div>
+
+      {activeKinds.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 11, ...body, color: C.inkSoft, lineHeight: 1.6 }}>
+          {activeKinds.map((kind, i) => {
+            const names = summaryFor(kind).map((r) => profileById(r.profile_id).name);
+            const sticker = stickers.find((s) => s.id === kind);
+            const label = sticker ? sticker.label : kind;
+            return (
+              <span key={kind}>
+                {i > 0 && "  ·  "}
+                <b style={{ color: C.ink, fontWeight: 500 }}>{label}</b> {names.join(", ")}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -278,7 +301,7 @@ function Composer({ me, groupId, prompts, prompt, onShuffle, onClose, onSubmit, 
       if (file) photo_url = await uploadToMedia(file, "posts");
       await onSubmit({
         group_id: groupId, profile_id: me.id, type: file ? "photo" : "text",
-        content: text.trim() || null, photo_url, prompt_tag: effectivePrompt, reactions: {},
+        content: text.trim() || null, photo_url, prompt_tag: effectivePrompt,
       });
       setPosted(true);
     } catch (err) {
@@ -378,8 +401,47 @@ function Composer({ me, groupId, prompts, prompt, onShuffle, onClose, onSubmit, 
   );
 }
 
+/* ---------- pin-to-calendar modal ---------- */
+function AddEventModal({ onClose, onSubmit }) {
+  const [title, setTitle] = useState("");
+  const [day, setDay] = useState("");
+  const [busy, setBusy] = useState(false);
+  const canSubmit = title.trim().length > 0 && +day >= 1 && +day <= 31 && !busy;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    try { await onSubmit(title.trim(), parseInt(day, 10)); onClose(); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(43,38,32,0.45)", display: "flex", alignItems: "flex-end", zIndex: 20 }} onClick={onClose}>
+      <div style={{ background: C.board, width: "100%", borderRadius: "20px 20px 0 0", padding: 20 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 22, ...display, color: C.ink }}>pin to the calendar</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={20} color={C.inkSoft} /></button>
+        </div>
+        <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 4 }}>what's happening</div>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Movie night" autoFocus
+          style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 4, padding: "10px 12px", fontSize: 15, ...body, background: C.paper, marginBottom: 12 }} />
+        <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 4 }}>day in July 2026</div>
+        <input value={day} onChange={(e) => setDay(e.target.value.replace(/\D/g, "").slice(0, 2))} placeholder="14" type="text" inputMode="numeric"
+          style={{ width: 80, boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 4, padding: "10px 12px", fontSize: 15, ...mono, background: C.paper, marginBottom: 16 }} />
+        <button onClick={submit} disabled={!canSubmit} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", borderRadius: 20,
+          padding: "10px 0", background: canSubmit ? C.coral : C.line, color: C.paper, fontSize: 14, ...body, fontWeight: 600,
+          cursor: canSubmit ? "pointer" : "default",
+        }}>
+          <Pin size={15} /> {busy ? "pinning..." : "pin it"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- board / calendar / groups screens ---------- */
-function BoardScreen({ posts, prompt, onShuffle, stickers, onReact, onAddSticker }) {
+function BoardScreen({ posts, prompt, onShuffle, stickers, me, profileById, onReact, onAddSticker }) {
   return (
     <div style={{ paddingBottom: 20 }}>
       <div style={{ margin: "14px 14px 4px", background: `${C.mustard}30`, border: `1px dashed ${C.mustard}`, borderRadius: 4, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -393,25 +455,20 @@ function BoardScreen({ posts, prompt, onShuffle, stickers, onReact, onAddSticker
           nobody's pinned anything here yet. be the annoying first one.
         </div>
       )}
-      {posts.map((p) => <PostCard key={p.id} post={p} stickers={stickers} onReact={onReact} onAddSticker={onAddSticker} />)}
+      {posts.map((p) => <PostCard key={p.id} post={p} stickers={stickers} me={me} profileById={profileById} onReact={onReact} onAddSticker={onAddSticker} />)}
       {posts.length > 0 && <CaughtUp />}
     </div>
   );
 }
 
-function CalendarScreen({ groupId, groupName, events, onAddEvent }) {
+function CalendarScreen({ groupName, events, onAddEvent }) {
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
   const firstWeekday = 3; // July 1 2026 is a Wednesday
   const cells = [...Array(firstWeekday).fill(null), ...days];
 
   return (
     <div style={{ padding: "16px 14px 30px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ fontSize: 24, ...display, color: C.ink }}>july, {groupName.toLowerCase()}</div>
-        <button onClick={onAddEvent} style={{ border: `1px solid ${C.periwinkle}`, background: `${C.periwinkle}14`, borderRadius: 20, padding: "6px 10px", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-          <CalendarPlus size={14} color={C.periwinkle} />
-        </button>
-      </div>
+      <div style={{ fontSize: 24, ...display, color: C.ink, marginBottom: 10 }}>july, {groupName.toLowerCase()}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 4 }}>
         {["s", "m", "t", "w", "t", "f", "s"].map((d, i) => <div key={i} style={{ textAlign: "center", fontSize: 11, ...mono, color: C.inkSoft }}>{d}</div>)}
       </div>
@@ -426,6 +483,15 @@ function CalendarScreen({ groupId, groupName, events, onAddEvent }) {
           );
         })}
       </div>
+
+      <button onClick={onAddEvent} style={{
+        width: "100%", marginTop: 16, border: `1px dashed ${C.periwinkle}`, background: `${C.periwinkle}14`, borderRadius: 8,
+        padding: "11px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 14, ...body,
+        color: C.periwinkle, cursor: "pointer",
+      }}>
+        <CalendarPlus size={16} /> pin an event to this calendar
+      </button>
+
       <div style={{ marginTop: 20 }}>
         <div style={{ fontSize: 13, ...body, color: C.inkSoft, marginBottom: 8 }}>pinned to the calendar</div>
         {events.length === 0 && <div style={{ fontSize: 12, ...body, color: C.inkSoft, fontStyle: "italic" }}>nothing on the calendar yet.</div>}
@@ -441,21 +507,35 @@ function CalendarScreen({ groupId, groupName, events, onAddEvent }) {
   );
 }
 
-function GroupsScreen({ groups, activeGroup, setActiveGroup, stickers, onInvite, onNewGroup }) {
+function GroupsScreen({ groups, activeGroup, setActiveGroup, stickers, onInvite, onNewGroup, onManageMembers }) {
   return (
     <div style={{ padding: "16px 14px 30px" }}>
       <div style={{ fontSize: 24, ...display, color: C.ink, marginBottom: 12 }}>your groups</div>
+
+      {groups.length === 0 && (
+        <div style={{ fontSize: 13, ...body, color: C.inkSoft, marginBottom: 14, fontStyle: "italic" }}>
+          you're not in any groups yet. create one, or ask a friend to add you to theirs.
+        </div>
+      )}
+
       {groups.map((g) => (
-        <div key={g.id} onClick={() => setActiveGroup(g.id)} style={{
+        <div key={g.id} style={{
           background: C.paper, border: `1px solid ${activeGroup === g.id ? colorForId(g.id) : C.line}`,
-          borderRadius: 8, padding: "12px 14px", marginBottom: 10, cursor: "pointer", borderLeft: `4px solid ${colorForId(g.id)}`,
+          borderRadius: 8, padding: "12px 14px", marginBottom: 10, borderLeft: `4px solid ${colorForId(g.id)}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
         }}>
-          <div style={{ fontSize: 16, ...body, fontWeight: 600, color: C.ink }}>{g.name}</div>
+          <div onClick={() => setActiveGroup(g.id)} style={{ flex: 1, cursor: "pointer", fontSize: 16, ...body, fontWeight: 600, color: C.ink }}>
+            {g.name}
+          </div>
+          <button onClick={() => onManageMembers(g)} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }} title="add people to this group">
+            <UserPlus size={16} color={C.inkSoft} />
+          </button>
         </div>
       ))}
+
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onInvite} style={{ flex: 1, border: `1px solid ${C.periwinkle}`, background: `${C.periwinkle}14`, borderRadius: 8, padding: "12px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 14, ...body, color: C.periwinkle, cursor: "pointer" }}>
-          <UserPlus size={16} /> invite a friend
+          <UserPlus size={16} /> invite someone new
         </button>
         <button onClick={onNewGroup} style={{ flex: 1, border: `1px dashed ${C.inkSoft}`, background: "transparent", borderRadius: 8, padding: "12px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 14, ...body, color: C.inkSoft, cursor: "pointer" }}>
           <Plus size={16} /> new group
@@ -482,7 +562,57 @@ function GroupsScreen({ groups, activeGroup, setActiveGroup, stickers, onInvite,
   );
 }
 
-function InviteModal({ onClose, onPreviewJoin }) {
+/* ---------- add existing app members to a group ---------- */
+function AddMembersModal({ group, allProfiles, onAdd, onClose }) {
+  const [memberIds, setMemberIds] = useState(null); // null = loading
+  const [addedIds, setAddedIds] = useState(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await sb.from("group_members").select("profile_id").eq("group_id", group.id);
+      if (!cancelled) setMemberIds(new Set((data || []).map((r) => r.profile_id)));
+    })();
+    return () => { cancelled = true; };
+  }, [group.id]);
+
+  const add = async (profileId) => {
+    setAddedIds((prev) => new Set([...prev, profileId]));
+    await onAdd(group.id, profileId);
+  };
+
+  const candidates = memberIds ? allProfiles.filter((p) => !memberIds.has(p.id) && !addedIds.has(p.id)) : [];
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(43,38,32,0.45)", display: "flex", alignItems: "flex-end", zIndex: 20 }} onClick={onClose}>
+      <div style={{ background: C.board, width: "100%", borderRadius: "20px 20px 0 0", padding: 20, maxHeight: "80%", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 22, ...display, color: C.ink }}>add people to {group.name}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={20} color={C.inkSoft} /></button>
+        </div>
+        <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 12 }}>
+          anyone already using nook can be added straight in — no link needed.
+        </div>
+        {memberIds === null && <div style={{ fontSize: 13, ...body, color: C.inkSoft }}>loading...</div>}
+        {memberIds !== null && candidates.length === 0 && (
+          <div style={{ fontSize: 13, ...body, color: C.inkSoft, fontStyle: "italic" }}>everyone on nook is already in this group.</div>
+        )}
+        {candidates.map((p) => (
+          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.line}` }}>
+            <Avatar name={p.name} color={p.color} size={30} />
+            <div style={{ flex: 1, fontSize: 14, ...body, color: C.ink }}>{p.name}</div>
+            <button onClick={() => add(p.id)} style={{
+              border: `1px solid ${C.periwinkle}`, background: `${C.periwinkle}14`, color: C.periwinkle,
+              borderRadius: 20, padding: "5px 12px", fontSize: 12, ...body, cursor: "pointer",
+            }}>add</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InviteModal({ onClose }) {
   const [copied, setCopied] = useState(false);
   const link = window.location.href.split("?")[0];
   const copy = async () => {
@@ -494,28 +624,26 @@ function InviteModal({ onClose, onPreviewJoin }) {
     <div style={{ position: "absolute", inset: 0, background: "rgba(43,38,32,0.45)", display: "flex", alignItems: "flex-end", zIndex: 20 }} onClick={onClose}>
       <div style={{ background: C.board, width: "100%", borderRadius: "20px 20px 0 0", padding: 20 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div style={{ fontSize: 22, ...display, color: C.ink }}>invite a friend</div>
+          <div style={{ fontSize: 22, ...display, color: C.ink }}>invite someone new</div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={20} color={C.inkSoft} /></button>
         </div>
         <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 12 }}>
-          just send them this exact link. no phone verification — whoever opens it picks a name and color and they're in, so only send it to people you'd trust with the board.
+          this link creates them a nook account, but doesn't put them in any group yet — once they're in,
+          go to a group's "add people" button to actually add them to it.
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: C.paper, border: `1px dashed ${C.periwinkle}`, borderRadius: 4, padding: "10px 12px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: C.paper, border: `1px dashed ${C.periwinkle}`, borderRadius: 4, padding: "10px 12px" }}>
           <span style={{ fontSize: 12, ...mono, color: C.ink, wordBreak: "break-all" }}>{link}</span>
           <button onClick={copy} style={{ border: "none", background: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
             {copied ? <Check size={15} color={C.sage} /> : <Copy size={15} color={C.periwinkle} />}
             <span style={{ fontSize: 11, ...body, color: copied ? C.sage : C.periwinkle }}>{copied ? "copied" : "copy"}</span>
           </button>
         </div>
-        <button onClick={onPreviewJoin} style={{ width: "100%", border: `1px solid ${C.line}`, background: C.paper, borderRadius: 20, padding: "10px 0", fontSize: 13, ...body, color: C.inkSoft, cursor: "pointer" }}>
-          preview what they'll see
-        </button>
       </div>
     </div>
   );
 }
 
-function JoinFlow({ onComplete, onCancel, previewOnly }) {
+function JoinFlow({ onComplete, onCancel }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [color, setColor] = useState(AVATAR_COLORS[0]);
@@ -526,7 +654,6 @@ function JoinFlow({ onComplete, onCancel, previewOnly }) {
   const canContinue = step === 0 ? true : step === 1 ? name.trim().length > 0 : true;
 
   const finish = async () => {
-    if (previewOnly) { onCancel(); return; }
     setBusy(true);
     try { await onComplete(name.trim(), color); }
     finally { setBusy(false); }
@@ -570,7 +697,7 @@ function JoinFlow({ onComplete, onCancel, previewOnly }) {
           <div style={{ textAlign: "center" }}>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><Avatar name={name || "You"} color={color} size={56} /></div>
             <div style={{ fontSize: 30, ...display, color: C.ink, marginBottom: 6 }}>welcome, {name || "friend"}</div>
-            <div style={{ fontSize: 13, ...body, color: C.inkSoft }}>you're in. no onboarding tour, just the board.</div>
+            <div style={{ fontSize: 13, ...body, color: C.inkSoft }}>you're in. ask a friend to add you to a group to see anything.</div>
           </div>
         )}
       </div>
@@ -592,7 +719,7 @@ function ConfigNeeded() {
   return (
     <div style={{ maxWidth: 480, margin: "60px auto", padding: 24, background: "#fff", borderRadius: 8, fontFamily: "sans-serif", lineHeight: 1.6 }}>
       <h2>nook isn't connected to a database yet</h2>
-      <p>Open this HTML file in a text editor, find the CONFIG section near the top, and paste in your Supabase project URL and anon key. See the setup instructions for where to find those.</p>
+      <p>Open this HTML file in a text editor, find the CONFIG section near the top, and paste in your Supabase project URL and anon key.</p>
     </div>
   );
 }
@@ -602,12 +729,14 @@ function App() {
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState("main");
-  const [previewJoin, setPreviewJoin] = useState(false);
   const [tab, setTab] = useState("board");
   const [showComposer, setShowComposer] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [manageGroup, setManageGroup] = useState(null);
 
   const [groups, setGroups] = useState([]);
+  const [allProfiles, setAllProfiles] = useState([]);
   const [activeGroupId, setActiveGroupId] = useState(null);
   const [posts, setPosts] = useState([]);
   const [prompts, setPrompts] = useState([]);
@@ -615,61 +744,104 @@ function App() {
   const [events, setEvents] = useState([]);
   const [promptIdx, setPromptIdx] = useState(0);
 
-  // load identity + initial data
+  const profileById = (id) => allProfiles.find((p) => p.id === id) || { name: "someone", color: C.inkSoft };
+
+  const loadMyGroups = async (profileId) => {
+    const { data } = await sb.from("group_members").select("group_id, groups(id, name)").eq("profile_id", profileId);
+    const gs = (data || []).map((r) => r.groups).filter(Boolean);
+    setGroups(gs);
+    setActiveGroupId((prev) => prev || (gs[0] && gs[0].id) || null);
+  };
+
+  // load identity + initial shared data
   useEffect(() => {
     if (!sb) { setLoading(false); return; }
     (async () => {
       const savedId = localStorage.getItem("nook_profile_id");
+      let profile = null;
       if (savedId) {
         const { data } = await sb.from("profiles").select("*").eq("id", savedId).single();
-        if (data) setMe(data); else localStorage.removeItem("nook_profile_id");
+        if (data) profile = data; else localStorage.removeItem("nook_profile_id");
       }
-      const { data: gs } = await sb.from("groups").select("*").order("created_at");
-      setGroups(gs || []);
-      if (gs && gs.length) setActiveGroupId(gs[0].id);
+      const { data: allP } = await sb.from("profiles").select("*").order("created_at");
+      setAllProfiles(allP || []);
       const { data: ps } = await sb.from("prompts").select("*").order("created_at");
       setPrompts(ps || []);
       const { data: st } = await sb.from("stickers").select("*").order("created_at");
       setStickers(st || []);
-      setLoading(false);
-      if (!savedId) setScreen("join");
+
+      if (profile) {
+        setMe(profile);
+        await loadMyGroups(profile.id);
+        setLoading(false);
+      } else {
+        setLoading(false);
+        setScreen("join");
+      }
     })();
   }, []);
 
-  // load posts + events for active group, with realtime subscriptions
+  // load posts + reactions + events for active group, with realtime subscriptions
   useEffect(() => {
-    if (!sb || !activeGroupId) return;
+    if (!sb || !activeGroupId) { setPosts([]); setEvents([]); return; }
     let cancelled = false;
     (async () => {
-      const { data } = await sb.from("posts").select("*, profiles(name,color)").eq("group_id", activeGroupId).order("created_at", { ascending: false });
-      if (!cancelled) setPosts(data || []);
+      const { data: postRows } = await sb.from("posts").select("*, profiles(name,color)").eq("group_id", activeGroupId).order("created_at", { ascending: false });
+      const ids = (postRows || []).map((p) => p.id);
+      let reactionRows = [];
+      if (ids.length) {
+        const { data } = await sb.from("reactions").select("*").in("post_id", ids);
+        reactionRows = data || [];
+      }
+      if (cancelled) return;
+      const grouped = {};
+      reactionRows.forEach((r) => { (grouped[r.post_id] = grouped[r.post_id] || []).push(r); });
+      setPosts((postRows || []).map((p) => ({ ...p, reactionRows: grouped[p.id] || [] })));
+
       const { data: evs } = await sb.from("events").select("*").eq("group_id", activeGroupId).order("event_date");
       if (!cancelled) setEvents(evs || []);
     })();
 
     const channel = sb.channel("posts-" + activeGroupId)
-      .on("postgres_changes", { event: "*", schema: "public", table: "posts", filter: `group_id=eq.${activeGroupId}` }, async (payload) => {
-        if (payload.eventType === "INSERT") {
-          const { data } = await sb.from("posts").select("*, profiles(name,color)").eq("id", payload.new.id).single();
-          if (data) setPosts((prev) => [data, ...prev]);
-        } else if (payload.eventType === "UPDATE") {
-          setPosts((prev) => prev.map((p) => (p.id === payload.new.id ? { ...p, ...payload.new } : p)));
-        }
-      }).subscribe();
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts", filter: `group_id=eq.${activeGroupId}` }, async (payload) => {
+        const { data } = await sb.from("posts").select("*, profiles(name,color)").eq("id", payload.new.id).single();
+        if (data) setPosts((prev) => [{ ...data, reactionRows: [] }, ...prev]);
+      })
+      .subscribe();
 
     return () => { cancelled = true; sb.removeChannel(channel); };
   }, [activeGroupId]);
 
-  // realtime for prompts + stickers (shared across everyone)
+  // realtime: reactions (any post currently loaded), prompts, stickers, and my own new group memberships
   useEffect(() => {
     if (!sb) return;
-    const ch = sb.channel("shared-lists")
+    const ch = sb.channel("shared-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "reactions" }, (payload) => {
+        const postId = payload.new?.post_id ?? payload.old?.post_id;
+        setPosts((prev) => prev.map((p) => {
+          if (p.id !== postId) return p;
+          if (payload.eventType === "INSERT") return { ...p, reactionRows: [...(p.reactionRows || []), payload.new] };
+          if (payload.eventType === "DELETE") return { ...p, reactionRows: (p.reactionRows || []).filter((r) => r.id !== payload.old.id) };
+          return p;
+        }));
+      })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "prompts" }, (payload) => setPrompts((prev) => [...prev, payload.new]))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "stickers" }, (payload) => setStickers((prev) => [...prev, payload.new]))
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "groups" }, (payload) => setGroups((prev) => [...prev, payload.new]))
       .subscribe();
     return () => sb.removeChannel(ch);
   }, []);
+
+  // realtime: someone added ME to a new group — show up live without refresh
+  useEffect(() => {
+    if (!sb || !me) return;
+    const ch = sb.channel("my-memberships-" + me.id)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "group_members", filter: `profile_id=eq.${me.id}` }, async (payload) => {
+        const { data } = await sb.from("groups").select("*").eq("id", payload.new.group_id).single();
+        if (data) setGroups((prev) => (prev.some((g) => g.id === data.id) ? prev : [...prev, data]));
+      })
+      .subscribe();
+    return () => sb.removeChannel(ch);
+  }, [me]);
 
   if (!sb) return <ConfigNeeded />;
   if (loading) return <div style={{ textAlign: "center", padding: 60, ...body, color: C.inkSoft }}>loading the board...</div>;
@@ -683,19 +855,29 @@ function App() {
     if (error) { alert("couldn't join — " + error.message); return; }
     localStorage.setItem("nook_profile_id", data.id);
     setMe(data);
+    setAllProfiles((prev) => [...prev, data]);
+    await loadMyGroups(data.id);
     setScreen("main");
   };
 
   const addPost = async (post) => {
     const { data, error } = await sb.from("posts").insert(post).select("*, profiles(name,color)").single();
-    if (error) { throw error; }
-    setPosts((prev) => [data, ...prev.filter((p) => p.id !== data.id)]);
+    if (error) throw error;
+    setPosts((prev) => [{ ...data, reactionRows: [] }, ...prev.filter((p) => p.id !== data.id)]);
   };
 
-  const reactToPost = async (postId, key, currentReactions) => {
-    const updated = { ...currentReactions, [key]: (currentReactions[key] || 0) + 1 };
-    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, reactions: updated } : p)));
-    await sb.from("posts").update({ reactions: updated }).eq("id", postId);
+  const reactToPost = async (postId, kind) => {
+    const post = posts.find((p) => p.id === postId);
+    const existing = (post?.reactionRows || []).find((r) => r.kind === kind && r.profile_id === me.id);
+    if (existing) {
+      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, reactionRows: p.reactionRows.filter((r) => r.id !== existing.id) } : p));
+      await sb.from("reactions").delete().eq("id", existing.id);
+    } else {
+      const optimistic = { id: "temp-" + Date.now(), post_id: postId, profile_id: me.id, kind };
+      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, reactionRows: [...(p.reactionRows || []), optimistic] } : p));
+      const { data } = await sb.from("reactions").insert({ post_id: postId, profile_id: me.id, kind }).select().single();
+      if (data) setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, reactionRows: p.reactionRows.map((r) => r.id === optimistic.id ? data : r) } : p));
+    }
   };
 
   const addSticker = async (file, label) => {
@@ -712,63 +894,78 @@ function App() {
   const addGroup = async () => {
     const name = window.prompt("Name this group:");
     if (!name || !name.trim()) return;
-    const { data } = await sb.from("groups").insert({ name: name.trim() }).select().single();
-    if (data) { setGroups((prev) => [...prev, data]); setActiveGroupId(data.id); }
+    const { data, error } = await sb.from("groups").insert({ name: name.trim(), created_by: me.id }).select().single();
+    if (error) { alert("couldn't create group — " + error.message); return; }
+    await sb.from("group_members").insert({ group_id: data.id, profile_id: me.id });
+    setGroups((prev) => [...prev, data]);
+    setActiveGroupId(data.id);
+    setTab("board");
   };
 
-  const addEvent = async () => {
-    const title = window.prompt("Event title?");
-    if (!title || !title.trim()) return;
-    const dayStr = window.prompt("Day of the month, July 2026 (1-31)?");
-    const day = parseInt(dayStr, 10);
-    if (!day || day < 1 || day > 31) return;
+  const addMemberToGroup = async (groupId, profileId) => {
+    await sb.from("group_members").insert({ group_id: groupId, profile_id: profileId });
+  };
+
+  const addEvent = async (title, day) => {
     const event_date = `2026-07-${String(day).padStart(2, "0")}`;
-    const { data } = await sb.from("events").insert({ group_id: activeGroupId, title: title.trim(), event_date }).select().single();
+    const { data } = await sb.from("events").insert({ group_id: activeGroupId, profile_id: me.id, title, event_date }).select().single();
     if (data) setEvents((prev) => [...prev, data].sort((a, b) => a.event_date.localeCompare(b.event_date)));
   };
 
   if (screen === "join") {
     return (
-      <div style={{ display: "flex", justifyContent: "center", padding: "20px 0" }}>
+      <div style={{ width: "100vw", height: "100dvh", background: C.board, overflow: "hidden", position: "relative" }}>
         <style>{FONTS}</style>
-        <div style={{ width: 400, height: 780, background: C.board, borderRadius: 32, overflow: "hidden", position: "relative", boxShadow: "0 8px 30px rgba(43,38,32,0.25)", border: `6px solid ${C.ink}` }}>
-          <JoinFlow onComplete={completeJoin} onCancel={() => setScreen("main")} previewOnly={previewJoin} />
-        </div>
+        <JoinFlow onComplete={completeJoin} onCancel={() => setScreen("main")} />
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "20px 0" }}>
+    <div style={{ width: "100vw", height: "100dvh", background: C.board, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}>
       <style>{FONTS}</style>
-      <div style={{ width: 400, height: 780, background: C.board, borderRadius: 32, overflow: "hidden", position: "relative", boxShadow: "0 8px 30px rgba(43,38,32,0.25)", border: `6px solid ${C.ink}`, display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "16px 16px 10px", flexShrink: 0 }}>
+      <div style={{ padding: "16px 16px 10px", flexShrink: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: 28, ...display, color: C.ink, fontWeight: 700 }}>nook</div>
-            <button onClick={() => setShowComposer(true)} style={{ width: 34, height: 34, borderRadius: "50%", background: C.coral, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <button onClick={() => setShowComposer(true)} disabled={!activeGroupId} style={{ width: 34, height: 34, borderRadius: "50%", background: activeGroupId ? C.coral : C.line, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: activeGroupId ? "pointer" : "default" }}>
               <Plus size={18} color={C.paper} />
+
             </button>
           </div>
-          <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 12, paddingBottom: 4 }}>
-            {groups.map((g) => (
-              <button key={g.id} onClick={() => setActiveGroupId(g.id)} style={{
-                flexShrink: 0, border: `1px solid ${activeGroupId === g.id ? colorForId(g.id) : C.line}`,
-                background: activeGroupId === g.id ? `${colorForId(g.id)}22` : C.paper,
-                color: activeGroupId === g.id ? colorForId(g.id) : C.inkSoft,
-                borderRadius: 20, padding: "6px 14px", fontSize: 13, ...body, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
-              }}>{g.name}</button>
-            ))}
-          </div>
+          {groups.length > 0 && (
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 12, paddingBottom: 4 }}>
+              {groups.map((g) => (
+                <button key={g.id} onClick={() => setActiveGroupId(g.id)} style={{
+                  flexShrink: 0, border: `1px solid ${activeGroupId === g.id ? colorForId(g.id) : C.line}`,
+                  background: activeGroupId === g.id ? `${colorForId(g.id)}22` : C.paper,
+                  color: activeGroupId === g.id ? colorForId(g.id) : C.inkSoft,
+                  borderRadius: 20, padding: "6px 14px", fontSize: 13, ...body, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                }}>{g.name}</button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", position: "relative" }}>
-          {tab === "board" && <BoardScreen posts={posts} prompt={prompt} onShuffle={shuffle} stickers={stickers} onReact={reactToPost} onAddSticker={addSticker} />}
-          {tab === "calendar" && group && <CalendarScreen groupId={activeGroupId} groupName={group.name} events={events} onAddEvent={addEvent} />}
-          {tab === "groups" && <GroupsScreen groups={groups} activeGroup={activeGroupId} setActiveGroup={setActiveGroupId} stickers={stickers} onInvite={() => setShowInvite(true)} onNewGroup={addGroup} />}
-          {showComposer && me && (
+          {tab === "board" && (
+            group
+              ? <BoardScreen posts={posts} prompt={prompt} onShuffle={shuffle} stickers={stickers} me={me} profileById={profileById} onReact={reactToPost} onAddSticker={addSticker} />
+              : <div style={{ textAlign: "center", padding: "60px 30px", fontSize: 14, ...body, color: C.inkSoft, fontStyle: "italic" }}>join or create a group to see a board.</div>
+          )}
+          {tab === "calendar" && (
+            group
+              ? <CalendarScreen groupName={group.name} events={events} onAddEvent={() => setShowEventModal(true)} />
+              : <div style={{ textAlign: "center", padding: "60px 30px", fontSize: 14, ...body, color: C.inkSoft, fontStyle: "italic" }}>join or create a group to see a calendar.</div>
+          )}
+          {tab === "groups" && (
+            <GroupsScreen groups={groups} activeGroup={activeGroupId} setActiveGroup={setActiveGroupId} stickers={stickers} onInvite={() => setShowInvite(true)} onNewGroup={addGroup} onManageMembers={setManageGroup} />
+          )}
+          {showComposer && me && group && (
             <Composer me={me} groupId={activeGroupId} prompts={prompts} prompt={prompt} onShuffle={shuffle} onClose={() => setShowComposer(false)} onSubmit={addPost} onAddPrompt={addPrompt} />
           )}
-          {showInvite && <InviteModal onClose={() => setShowInvite(false)} onPreviewJoin={() => { setShowInvite(false); setPreviewJoin(true); setScreen("join"); }} />}
+          {showInvite && <InviteModal onClose={() => setShowInvite(false)} />}
+          {showEventModal && <AddEventModal onClose={() => setShowEventModal(false)} onSubmit={addEvent} />}
+          {manageGroup && <AddMembersModal group={manageGroup} allProfiles={allProfiles} onAdd={addMemberToGroup} onClose={() => setManageGroup(null)} />}
         </div>
 
         <div style={{ display: "flex", borderTop: `1px solid ${C.line}`, background: C.paper, flexShrink: 0 }}>
@@ -783,7 +980,6 @@ function App() {
           })}
         </div>
       </div>
-    </div>
   );
 }
 
