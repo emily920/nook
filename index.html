@@ -337,8 +337,14 @@ function AddEventModal({ onClose, onSubmit }) {
   const submit = async () => {
     if (!canSubmit) return;
     setBusy(true);
-    try { await onSubmit(title.trim(), parseInt(day, 10)); onClose(); }
-    finally { setBusy(false); }
+    try {
+      await onSubmit(title.trim(), parseInt(day, 10));
+      onClose();
+    } catch (err) {
+      alert("couldn't pin that — " + err.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -690,8 +696,9 @@ function App() {
 
   const addEvent = async (title, day) => {
     const event_date = `2026-07-${String(day).padStart(2, "0")}`;
-    const { data } = await sb.from("events").insert({ profile_id: me.id, title, event_date }).select().single();
-    if (data) setEvents((prev) => [...prev, data].sort((a, b) => a.event_date.localeCompare(b.event_date)));
+    const { data, error } = await sb.from("events").insert({ profile_id: me.id, title, event_date }).select().single();
+    if (error) throw error;
+    setEvents((prev) => [...prev, data].sort((a, b) => a.event_date.localeCompare(b.event_date)));
   };
 
   if (screen === "join") {
