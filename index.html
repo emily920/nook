@@ -36,7 +36,18 @@ const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Caveat:wght
 const display = { fontFamily: "'Caveat', cursive" };
 const body = { fontFamily: "'Work Sans', sans-serif" };
 const mono = { fontFamily: "'IBM Plex Mono', monospace" };
-const AVATAR_COLORS = [C.coral, C.mustard, C.sage, C.periwinkle];
+const AVATAR_COLORS = [
+  "#E85C41", // coral
+  "#E3A72E", // mustard
+  "#6FA98A", // sage
+  "#6E7FDB", // periwinkle
+  "#9B5DE5", // plum
+  "#2FA9A1", // teal
+  "#E8598F", // rose
+  "#8A9A46", // olive
+  "#4FA8D8", // sky
+  "#C9622A", // terracotta
+];
 const CHIP_COLORS = AVATAR_COLORS;
 const POINT_AMOUNTS = [1, 5, 10];
 
@@ -555,37 +566,67 @@ function InviteModal({ onClose }) {
   );
 }
 
-function JoinFlow({ onComplete, onCancel }) {
-  const [step, setStep] = useState(0);
+function JoinFlow({ onCreateNew, onAdoptExisting, onCancel, allProfiles }) {
+  const [phase, setPhase] = useState("welcome"); // welcome -> name -> (confirm) -> color -> done
   const [name, setName] = useState("");
   const [color, setColor] = useState(AVATAR_COLORS[0]);
   const [busy, setBusy] = useState(false);
-  const steps = ["welcome", "name", "color", "done"];
-  const next = () => setStep((s) => Math.min(s + 1, steps.length - 1));
-  const back = () => (step === 0 ? onCancel() : setStep((s) => s - 1));
-  const canContinue = step === 0 ? true : step === 1 ? name.trim().length > 0 : true;
+  const [matched, setMatched] = useState(null);
+
+  const dotIndex = { welcome: 0, name: 1, confirm: 1, color: 2, done: 3 }[phase];
+  const dots = 4;
+
+  const back = () => {
+    if (phase === "welcome") onCancel();
+    else if (phase === "name") setPhase("welcome");
+    else if (phase === "confirm") setPhase("name");
+    else if (phase === "color") setPhase(matched ? "confirm" : "name");
+    else if (phase === "done") setPhase("color");
+  };
+
+  const proceedFromName = () => {
+    const found = allProfiles.find((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (found) { setMatched(found); setPhase("confirm"); }
+    else setPhase("color");
+  };
+
+  const confirmYes = async () => {
+    setBusy(true);
+    try { await onAdoptExisting(matched); }
+    finally { setBusy(false); }
+  };
+  const confirmNo = () => { setMatched(null); setPhase("color"); };
 
   const finish = async () => {
     setBusy(true);
-    try { await onComplete(name.trim(), color); }
+    try { await onCreateNew(name.trim(), color); }
     finally { setBusy(false); }
+  };
+
+  const canContinue = phase === "welcome" || phase === "color" || phase === "done" ? true : phase === "name" ? name.trim().length > 0 : true;
+
+  const primaryAction = () => {
+    if (phase === "welcome") setPhase("name");
+    else if (phase === "name") proceedFromName();
+    else if (phase === "color") setPhase("done");
+    else if (phase === "done") finish();
   };
 
   return (
     <div style={{ position: "absolute", inset: 0, background: C.board, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 0" }}>
         <button onClick={back} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><ArrowLeft size={18} color={C.inkSoft} /></button>
-        <div style={{ display: "flex", gap: 5 }}>{steps.map((_, i) => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i <= step ? C.coral : C.line }} />)}</div>
+        <div style={{ display: "flex", gap: 5 }}>{Array.from({ length: dots }).map((_, i) => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i <= dotIndex ? C.coral : C.line }} />)}</div>
         <div style={{ width: 18 }} />
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 28px" }}>
-        {step === 0 && (
+        {phase === "welcome" && (
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 34, ...display, color: C.ink, marginBottom: 8 }}>you've been invited to nook</div>
             <div style={{ fontSize: 14, ...body, color: C.inkSoft }}>someone sent you this link directly. that's the whole verification system.</div>
           </div>
         )}
-        {step === 1 && (
+        {phase === "name" && (
           <div>
             <div style={{ fontSize: 26, ...display, color: C.ink, marginBottom: 4 }}>what's your name</div>
             <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 14 }}>this is what your friends will see on your posts.</div>
@@ -593,19 +634,34 @@ function JoinFlow({ onComplete, onCancel }) {
               style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 4, padding: "10px 12px", fontSize: 15, ...body, background: C.paper }} />
           </div>
         )}
-        {step === 2 && (
+        {phase === "confirm" && matched && (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><Avatar name={matched.name} color={matched.color} size={52} /></div>
+            <div style={{ fontSize: 24, ...display, color: C.ink, marginBottom: 6 }}>is this you?</div>
+            <div style={{ fontSize: 13, ...body, color: C.inkSoft, marginBottom: 20 }}>there's already a "{matched.name}" on nook. if that's you on another device, we'll combine them into one identity instead of making a duplicate.</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={confirmNo} style={{ flex: 1, border: `1px solid ${C.line}`, background: C.paper, color: C.inkSoft, borderRadius: 20, padding: "10px 0", fontSize: 13, ...body, cursor: "pointer" }}>
+                no, that's someone else
+              </button>
+              <button onClick={confirmYes} disabled={busy} style={{ flex: 1, border: "none", background: C.coral, color: C.paper, borderRadius: 20, padding: "10px 0", fontSize: 13, ...body, fontWeight: 600, cursor: "pointer" }}>
+                {busy ? "combining..." : "yes, that's me"}
+              </button>
+            </div>
+          </div>
+        )}
+        {phase === "color" && (
           <div>
             <div style={{ fontSize: 26, ...display, color: C.ink, marginBottom: 4 }}>pick your color</div>
             <div style={{ fontSize: 12, ...body, color: C.inkSoft, marginBottom: 14 }}>this is how you'll show up on the board.</div>
-            <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 10 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 14, maxWidth: 280, marginLeft: "auto", marginRight: "auto" }}>
               {AVATAR_COLORS.map((c) => (
-                <button key={c} onClick={() => setColor(c)} style={{ width: 44, height: 44, borderRadius: "50%", background: c, cursor: "pointer", border: color === c ? `3px solid ${C.ink}` : `3px solid transparent` }} />
+                <button key={c} onClick={() => setColor(c)} style={{ width: 38, height: 38, borderRadius: "50%", background: c, cursor: "pointer", border: color === c ? `3px solid ${C.ink}` : `3px solid transparent` }} />
               ))}
             </div>
             <div style={{ display: "flex", justifyContent: "center" }}><Avatar name={name || "You"} color={color} size={44} /></div>
           </div>
         )}
-        {step === 3 && (
+        {phase === "done" && (
           <div style={{ textAlign: "center" }}>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><Avatar name={name || "You"} color={color} size={56} /></div>
             <div style={{ fontSize: 30, ...display, color: C.ink, marginBottom: 6 }}>welcome, {name || "friend"}</div>
@@ -613,16 +669,18 @@ function JoinFlow({ onComplete, onCancel }) {
           </div>
         )}
       </div>
-      <div style={{ padding: 20 }}>
-        <button onClick={step === steps.length - 1 ? finish : next} disabled={!canContinue || busy} style={{
-          width: "100%", border: "none", borderRadius: 20, padding: "11px 0",
-          background: canContinue ? C.coral : C.line, color: C.paper, fontSize: 14, ...body, fontWeight: 600,
-          cursor: canContinue ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-        }}>
-          {step === steps.length - 1 ? (busy ? "joining..." : "enter nook") : "continue"}
-          {step !== steps.length - 1 && <ArrowRight size={15} />}
-        </button>
-      </div>
+      {phase !== "confirm" && (
+        <div style={{ padding: 20 }}>
+          <button onClick={primaryAction} disabled={!canContinue || busy} style={{
+            width: "100%", border: "none", borderRadius: 20, padding: "11px 0",
+            background: canContinue ? C.coral : C.line, color: C.paper, fontSize: 14, ...body, fontWeight: 600,
+            cursor: canContinue ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}>
+            {phase === "done" ? (busy ? "joining..." : "enter nook") : "continue"}
+            {phase !== "done" && <ArrowRight size={15} />}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -730,12 +788,18 @@ function App() {
   const prompt = prompts.length ? prompts[promptIdx % prompts.length].text : "";
   const shuffle = () => setPromptIdx((i) => (i + 1 + Math.floor(Math.random() * Math.max(1, prompts.length - 1))) % Math.max(1, prompts.length));
 
-  const completeJoin = async (name, color) => {
+  const createNewProfile = async (name, color) => {
     const { data, error } = await sb.from("profiles").insert({ name, color }).select().single();
     if (error) { alert("couldn't join — " + error.message); return; }
     localStorage.setItem("nook_profile_id", data.id);
     setMe(data);
     setAllProfiles((prev) => [...prev, data]);
+    setScreen("main");
+  };
+
+  const adoptExistingProfile = async (profile) => {
+    localStorage.setItem("nook_profile_id", profile.id);
+    setMe(profile);
     setScreen("main");
   };
 
@@ -806,7 +870,7 @@ function App() {
     return (
       <div style={{ width: "100vw", height: "100dvh", background: C.board, overflow: "hidden", position: "relative" }}>
         <style>{FONTS}</style>
-        <JoinFlow onComplete={completeJoin} onCancel={() => setScreen("main")} />
+        <JoinFlow onCreateNew={createNewProfile} onAdoptExisting={adoptExistingProfile} onCancel={() => setScreen("main")} allProfiles={allProfiles} />
       </div>
     );
   }
@@ -855,7 +919,6 @@ function App() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
-</script>
+root.render(<App />);</script>
 </body>
 </html>
